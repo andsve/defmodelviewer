@@ -1,0 +1,6 @@
+mesh: "/main/example_data/simple.dae"
+material: "/main/rendering/model.material"
+textures: "/main/images/unit_tex.png"
+skeleton: "/main/example_data/simple.dae"
+animations: "/main/primary.animationset"
+name: "unnamed"

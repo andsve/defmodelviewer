@@ -1,0 +1,261 @@
+local dirtylarry = require "dirtylarry.dirtylarry"
+
+local function hit_test(self, node, action_id, action)
+    if not dirtylarry.is_enabled(self, node) then
+        return false
+    end
+
+    local hit = gui.pick_node( node, action.x, action.y )
+    local touch = action_id == dirtylarry.action_id_touch
+    return touch and hit
+end
+
+function dirtylarry.anim_button(self, node_bg, node_label, action_id, action, cb)
+
+    local label_p = vmath.vector3(-360, 0.0, 0.0)
+    local flipbook = "button_normal"
+    local hit = hit_test(self, node_bg, action_id, action)
+    if hit then
+        if action.released then
+            cb()
+        else
+            label_p.y = -2.0
+            flipbook = "button_pressed"
+        end
+    end
+
+    gui.play_flipbook(node_bg, flipbook)
+    gui.set_position(node_label, label_p)
+
+end
+
+
+function parse_animations(animationset_raw)
+
+    local entries = {}
+    for w in string.gmatch(animationset_raw, "animation: \"([^\"]+)\"") do
+        local last_slash = string.find(w, "/[^/]*$")
+        local entry = string.sub(w, last_slash+1)
+        local last_dot = string.find(entry, ".[^.]*$")
+        local file_type = string.sub(entry, last_dot+1)
+        local anim_name = string.sub(entry, 1, last_dot-1)
+        
+        if (file_type == "animationset") then
+            -- animationset
+            local data = sys.load_resource(w)
+            local sub_entries = parse_animations(data)
+            for k,v in pairs(sub_entries) do
+                table.insert(entries, anim_name .. "/" .. v)
+            end
+        else
+            -- dae
+            table.insert(entries, anim_name)
+        end
+    end
+    
+    return entries
+
+end
+
+function init(self)
+	msg.post(".", "acquire_input_focus")
+	
+	local data = sys.load_resource("/main/primary.animationset")
+	self.animation_list = parse_animations(data)
+	
+	local template_button = gui.get_node("animation_button/larrybutton")
+	local y = 440
+	self.animation_buttons = {}
+	for k,v in pairs(self.animation_list) do
+	   local new_playback_button = gui.clone_tree(template_button)
+	   local p = gui.get_position(template_button)
+	   p.y = y
+	   gui.set_position(new_playback_button["animation_button/larrybutton"], p)
+	   gui.set_text(new_playback_button["animation_button/anim_name"], v)
+	   
+	   self.animation_buttons[v] = new_playback_button
+	   --self.animation_buttons["animation_name"] = v
+	   
+	   y = y - 100
+	end
+	
+	self.speed = 1.0
+	
+	-- initial camera settings
+	self.cam_alpha = -2.2
+    self.cam_beta = -0.5
+    self.cam_dist = 12
+    self.cam_h = 0
+    self.cam_target = vmath.vector3(0, 0, 0)
+    
+    -- initial model rotations
+    self.model_rot_x = 0.0
+    self.model_rot_y = 0.0
+    
+    -- input state
+    self.shift = false
+    self.ctrl = false
+    self.show_gui = true
+    
+    self.grid_size = 5
+    self.animate_light = false
+    self.light_anim = 0
+    
+    self.camera_info_node = gui.get_node("camera_info")
+    
+    -- show key/help
+    self.show_help = true
+    local help_node = gui.get_node("help_txt")
+    if self.show_help then
+    
+        local help_text = [[Keys/Help:
+Tab = Toggle GUI
+LMB = Rotate camera/orbit 
+LMB+Shift = Move camera
+LMB+Ctrl = Rotate model
+Scroll = Zoom camera
+]]
+    
+        gui.set_text(help_node, help_text)
+        gui.animate(help_node, "color", vmath.vector4(1, 1, 1, 0), gui.EASING_LINEAR, 2, 4, function()
+            gui.delete_node(help_node)
+        end)
+    else
+        gui.delete_node(help_node)
+    end
+    
+end
+
+function draw_grid(self, size)
+    local grid_color = vmath.vector4(0.6, 0.6, 0.6, 1.0) 
+    local step = size / 10
+    for x=-size,size,step do
+        local line_start = vmath.vector3(x, 0, -size)
+        local line_end = vmath.vector3(x, 0, size)
+        msg.post("@render:", "draw_line", { start_point = line_start, end_point = line_end, color = grid_color } )
+    end
+    
+    for z=-size,size,step do
+        local line_start = vmath.vector3(-size, 0, z)
+        local line_end = vmath.vector3(size, 0, z)
+        msg.post("@render:", "draw_line", { start_point = line_start, end_point = line_end, color = grid_color } )
+    end
+end
+
+function update(self, dt)
+    -- draw lookat target
+    local axis_size = 0.1
+    msg.post("@render:", "draw_line", { start_point = self.cam_target+vmath.vector3(0, 0, 0), end_point = self.cam_target+vmath.vector3(axis_size, 0, 0), color = vmath.vector4(1, 0, 0, 1) } )
+    msg.post("@render:", "draw_line", { start_point = self.cam_target+vmath.vector3(0, 0, 0), end_point = self.cam_target+vmath.vector3(0, axis_size, 0), color = vmath.vector4(0, 1, 0, 1) } )
+    msg.post("@render:", "draw_line", { start_point = self.cam_target+vmath.vector3(0, 0, 0), end_point = self.cam_target+vmath.vector3(0, 0, axis_size), color = vmath.vector4(0, 0, 1, 1) } )
+    
+    -- draw grid
+    draw_grid(self, self.grid_size)
+    
+    -- display lookat target / 3D cursor position
+    gui.set_text(self.camera_info_node, string.format("3D Cursor: %.2f, %.2f, %.2f", self.cam_target.x, self.cam_target.y, self.cam_target.z) )
+    
+    -- animate light position
+    if self.animate_light then
+        self.light_anim = self.light_anim + dt
+    end
+	local light_dist = 5
+	local p_x = math.cos(self.light_anim)*light_dist
+	local p_y = math.cos(self.light_anim*0.2)*light_dist
+	local p_z = math.sin(self.light_anim)*light_dist
+	local light_pos = vmath.vector4(p_x, p_y, p_z, 0.0)
+	msg.post("/go", "set_light_pos", {light_pos = light_pos})        
+    
+end
+
+function on_input(self, action_id, action)
+    -- animation buttons
+    dirtylarry:button("button_cancel", action_id, action, function ()
+    	msg.post("go", "cancel")
+    end)
+    
+    self.speed = dirtylarry:input("speed", action_id, action, gui.KEYBOARD_TYPE_NUMBER_PAD, "Speed")
+    
+    -- animation buttons
+    for k,v in pairs(self.animation_buttons) do
+        dirtylarry:anim_button(v["animation_button/larrybutton"], v["animation_button/larrylabel"], action_id, action, function ()
+	        msg.post("go", "play", {animation = k, speed = self.speed} )
+	    end)
+    end
+    
+    -- light animation toggle
+    self.animate_light = dirtylarry:checkbox("checkbox_animate_light", action_id, action, self.animate_light)
+    
+    -- grid size radio buttons
+    self.grid_size = dirtylarry:radio("grid_small", action_id, action, 1, self.grid_size)
+    self.grid_size = dirtylarry:radio("grid_medium", action_id, action, 5, self.grid_size)
+    self.grid_size = dirtylarry:radio("grid_large", action_id, action, 10, self.grid_size)
+    
+    -- profiler checkbox
+    local old_value = self.show_profile
+    self.show_profile = dirtylarry:checkbox("profile", action_id, action, self.show_profile)
+    if self.show_profile ~= old_value then
+        msg.post("@system:", "toggle_profile")
+    end
+    
+    -- key, mouse/camera input
+    if action_id == hash("tab") then
+        if action.released then
+            self.show_gui = not self.show_gui
+            gui.set_enabled(gui.get_node("root"), self.show_gui)
+        end
+    elseif action_id == hash("shift") then
+        if action.released then
+            self.shift = false
+        else
+            self.shift = true        
+        end
+    elseif action_id == hash("ctrl") then
+        if action.released then
+            self.ctrl = false
+        else
+            self.ctrl = true        
+        end
+    elseif action_id == hash("touch") and not action.pressed then
+        
+        local dx = action.dx
+        local dy = action.dy
+        
+        if self.shift then
+            -- move target
+            local move_vec = vmath.vector3(-dx*0.005, -dy*0.005, 0)
+		    local cam_rot = vmath.quat_rotation_y(-self.cam_alpha) * vmath.quat_rotation_x(self.cam_beta)
+		    move_vec = vmath.rotate(cam_rot, move_vec)
+		    self.cam_target = self.cam_target + move_vec
+		    
+        elseif self.ctrl then
+            -- rotate model
+            self.model_rot_x = self.model_rot_x + dx*0.01
+            self.model_rot_y = self.model_rot_y + dy*0.01
+        else
+            -- rotate camera
+	        self.cam_alpha = self.cam_alpha + dx*0.01
+	        self.cam_beta = self.cam_beta + dy*0.01
+        end
+    
+    elseif action_id == hash("zoom_in") then
+        self.cam_dist = self.cam_dist + action.value*0.3
+    elseif action_id == hash("zoom_out") then
+        self.cam_dist = self.cam_dist - action.value*0.3
+    end
+    
+    self.cam_dist = math.max(0, self.cam_dist)
+    
+    -- always send camera and model rotations... why not, we got the power? :-)
+    msg.post("@render:", "set_cam", {
+            cam_alpha = self.cam_alpha,
+            cam_beta = self.cam_beta,
+            cam_dist = self.cam_dist,
+            cam_target = self.cam_target
+        })
+        
+    msg.post("/go", "set_model", {
+            model_rot_x = self.model_rot_x,
+            model_rot_y = self.model_rot_y
+        })
+end

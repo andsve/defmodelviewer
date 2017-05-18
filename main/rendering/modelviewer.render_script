@@ -1,0 +1,97 @@
+function init(self)
+    self.tile_pred = render.predicate({"tile"})
+    self.gui_pred = render.predicate({"gui"})
+    self.text_pred = render.predicate({"text"})
+    self.particle_pred = render.predicate({"particle"})
+    self.model_pred = render.predicate({"model"})
+    --self.model_spine_pred = render.predicate({"model_spine"})
+    self.model_label_pred = render.predicate({"model_label"})
+    --self.model_label_pred = render.predicate({"model_no_cull"})
+    
+
+    self.clear_color = vmath.vector4(0, 0, 0, 0)
+    self.clear_color.x = sys.get_config("render.clear_color_red", 0)
+    self.clear_color.y = sys.get_config("render.clear_color_green", 0)
+    self.clear_color.z = sys.get_config("render.clear_color_blue", 0)
+    self.clear_color.w = sys.get_config("render.clear_color_alpha", 0)
+
+    self.view = vmath.matrix4()
+    
+	self.cam_alpha = -2.2
+    self.cam_beta = -0.5
+    self.cam_dist = 12
+    self.cam_target = vmath.vector3(0,0,0)
+end
+
+function update(self)
+    render.set_depth_mask(true)
+    render.clear({[render.BUFFER_COLOR_BIT] = self.clear_color, [render.BUFFER_DEPTH_BIT] = 1, [render.BUFFER_STENCIL_BIT] = 0})
+    render.set_viewport(0, 0, render.get_window_width(), render.get_window_height())
+
+    -- Render 2D space (sprite etc)
+    render.set_view(self.view)
+    render.set_projection(vmath.matrix4_orthographic(0, render.get_width(), 0, render.get_height(), -1, 1))
+
+    render.set_depth_mask(false)
+    render.disable_state(render.STATE_DEPTH_TEST)
+    render.disable_state(render.STATE_STENCIL_TEST)
+    render.enable_state(render.STATE_BLEND)
+    render.set_blend_func(render.BLEND_SRC_ALPHA, render.BLEND_ONE_MINUS_SRC_ALPHA)
+    render.disable_state(render.STATE_CULL_FACE)
+    render.draw(self.tile_pred)
+    render.draw(self.particle_pred)
+    render.draw_debug2d()
+    
+    -- Create a orbit camera
+    local cam_dist = self.cam_dist
+    local cam_h = self.cam_h
+    local cam_boom = vmath.vector3(0, 0, cam_dist)
+    local cam_lookat = self.cam_target
+    self.cam_rot = vmath.quat_rotation_y(-self.cam_alpha) * vmath.quat_rotation_x(self.cam_beta)
+    local cam_pos = self.cam_target + vmath.rotate(self.cam_rot, cam_boom)
+    local cam_up = vmath.rotate(self.cam_rot, vmath.vector3(0,1,0))
+    local view_mtx = vmath.matrix4_look_at(cam_pos, cam_lookat, cam_up)
+    render.set_view(view_mtx)
+    render.set_projection(vmath.matrix4_perspective(45 * (math.pi / 180), render.get_window_width() / render.get_window_height(), 0.1, 1000.0))
+    
+    -- Render 3D space
+    --render.set_depth_func(render.COMPARE_FUNC_LEQUAL)
+    render.enable_state(render.STATE_CULL_FACE)
+    render.enable_state(render.STATE_DEPTH_TEST)
+    render.set_depth_mask(true)
+    render.draw(self.model_pred)
+    render.draw_debug3d()
+    render.disable_state(render.STATE_CULL_FACE)
+    render.set_depth_mask(false)
+    --render.set_depth_func(render.COMPARE_FUNC_GEQUAL)
+    render.draw(self.model_label_pred)
+
+	
+	-- Render GUI and overlays
+	render.set_view(vmath.matrix4())
+    render.set_projection(vmath.matrix4_orthographic(0, render.get_window_width(), 0, render.get_window_height(), -1, 1))
+
+	render.set_depth_mask(false)
+    render.disable_state(render.STATE_DEPTH_TEST)
+    render.disable_state(render.STATE_STENCIL_TEST)
+    render.enable_state(render.STATE_BLEND)
+    render.set_blend_func(render.BLEND_SRC_ALPHA, render.BLEND_ONE_MINUS_SRC_ALPHA)
+    render.disable_state(render.STATE_CULL_FACE)
+    render.enable_state(render.STATE_STENCIL_TEST)
+    render.draw(self.gui_pred)
+    render.draw(self.text_pred)
+    render.disable_state(render.STATE_STENCIL_TEST)
+end
+
+function on_message(self, message_id, message)
+    if message_id == hash("clear_color") then
+        self.clear_color = message.color
+    elseif message_id == hash("set_view_projection") then
+        self.view = message.view
+    elseif message_id == hash("set_cam") then
+        self.cam_alpha = message.cam_alpha
+	    self.cam_beta = message.cam_beta
+	    self.cam_dist = message.cam_dist
+	    self.cam_target = message.cam_target
+    end
+end

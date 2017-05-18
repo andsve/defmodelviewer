@@ -1,0 +1,134 @@
+go.property("unit", 1)
+
+function string:split(sep)
+        local sep, fields = sep or ":", {}
+        local pattern = string.format("([^%s\n]+)", sep)
+        self:gsub(pattern, function(c) fields[#fields+1] = c end)
+        return fields
+end
+
+function find_bones(model_path)
+
+    local model_raw = sys.load_resource(model_path)
+    
+    -- find mesh file entry
+    local match = string.gmatch(model_raw, "mesh: \"([^\"]+)\"")
+    local mesh_path = match()
+    print("mesh path: " .. mesh_path)
+    
+    -- read mesh file
+    local mesh_raw = sys.load_resource(mesh_path)
+    local match = string.gmatch(mesh_raw, "\"JOINT\" source=\"#([^\"]+)\"")
+    local joint_match = match()
+    print("joint entry id: " .. joint_match)
+    
+    joint_match = string.gsub(joint_match, "([-])", "%%%1")
+    print("joint entry id: " .. joint_match)
+    
+    local match = string.gmatch(mesh_raw, "\"" .. joint_match .. "\".-</source>")
+    local joints_entry = match()
+    
+    local match = string.gmatch(joints_entry, "Name_array.->%s*(.-)</Name_array>")
+    local joints = match()
+    print("found: " .. joints)
+    
+    joints = string.split(joints, " ")
+    
+    -- find unit/size of model
+    local unit = go.get(nil, "unit")
+    local match = string.gmatch(mesh_raw, "meter=\"([^\"]+)\"")
+    local unit_match = match()
+    print("unit: " .. tostring(unit_match))
+    
+    return joints, unit
+end
+
+function create_bone_label(self, bone_name, scale, parent_url, getter_func)
+    local label_obj = factory.create("/go#labelfactory", vmath.vector3(0,0,scale), vmath.quat(), {}, vmath.vector3(0.3 * scale))
+    label.set_text(label_obj, bone_name)
+    
+    if not parent_url then
+        parent_url = "/go#model"
+    end
+    local bone_go = getter_func(parent_url, bone_name)
+    msg.post(label_obj, "set_parent", {parent_id = bone_go, keep_world_transform = 0})
+    --go.set_rotation(vmath.quat_rotation_y(math.pi / 180 * 90), label_obj)
+    
+    self.bone_labels[bone_name] = label_obj
+end
+
+function init(self)
+	-- set blue background
+    msg.post("@render:", "clear_color", { color = vmath.vector4(0.3, 0.3, 0.3, 0) } )
+	msg.post(".", "acquire_input_focus")
+	
+    self.model_rot_x = 0
+    self.model_rot_y = 0
+    --self.light_pos = 0
+    
+    self.joints, self.unit = find_bones("/main/primary.model")
+    
+    self.bone_labels = {}
+    for k,v in pairs(self.joints) do
+        create_bone_label(self, v, self.unit, "/go#model", model.get_go)
+    end
+    
+end
+
+function draw_bone(self, bone_id)
+    local p_size = 0.3
+    local bone_obj = model.get_go("go#model", bone_id)
+    local p = go.get_world_position(bone_obj)
+    local r = go.get_world_rotation(bone_obj)
+    
+    local up_vec = vmath.vector4(0, 1, 0, 0)
+    local r_mat = vmath.matrix4_from_quat(r)
+    up_vec = r_mat * up_vec
+    
+    msg.post("@render:", "draw_line", { start_point = p - vmath.vector3(p_size, 0, 0), end_point = p + vmath.vector3(p_size, 0, 0), color = vmath.vector4(1, 1, 0, 1) } )
+    msg.post("@render:", "draw_line", { start_point = p - vmath.vector3(0, p_size, 0), end_point = p + vmath.vector3(0, p_size, 0), color = vmath.vector4(1, 1, 0, 1) } )
+    msg.post("@render:", "draw_line", { start_point = p - vmath.vector3(0, 0, p_size), end_point = p + vmath.vector3(0, 0, p_size), color = vmath.vector4(1, 1, 0, 1) } )
+    
+    -- up vector
+    --msg.post("@render:", "draw_line", { start_point = p, end_point = p + vmath.vector3(up_vec.x, up_vec.y, up_vec.z), color = vmath.vector4(0, 1, 0, 1) } )
+end
+
+function update(self, dt)
+    -- draw axis
+    local axis_size = 0.6
+    msg.post("@render:", "draw_line", { start_point = vmath.vector3(0, 0, 0), end_point = vmath.vector3(axis_size, 0, 0), color = vmath.vector4(1, 0, 0, 1) } )
+    msg.post("@render:", "draw_line", { start_point = vmath.vector3(0, 0, 0), end_point = vmath.vector3(0, axis_size, 0), color = vmath.vector4(0, 1, 0, 1) } )
+    msg.post("@render:", "draw_line", { start_point = vmath.vector3(0, 0, 0), end_point = vmath.vector3(0, 0, axis_size), color = vmath.vector4(0, 0, 1, 1) } )
+
+    for k,v in pairs(self.joints) do
+        --create_bone_label(self, v)
+        draw_bone(self, v)
+    end
+
+    local model_rot = vmath.quat_rotation_y(self.model_rot_x) * vmath.quat_rotation_x(-self.model_rot_y)
+    go.set_rotation(model_rot)
+end
+
+function on_message(self, message_id, message)
+	if message_id == hash("cancel") then
+		model.cancel("go#model")
+	elseif message_id == hash("play") then
+        --model.play("go#model", message.animation, go.PLAYBACK_LOOP_PINGPONG, 1)
+        model.play_anim("go#model", message.animation, go.PLAYBACK_LOOP_PINGPONG, {playback_rate = message.speed})
+    elseif message_id == hash("set_model") then
+        self.model_rot_x = message.model_rot_x
+        self.model_rot_y = message.model_rot_y
+	elseif message_id == hash("set_light_pos") then
+	    local light_pos = message.light_pos
+	    model.set_constant("go#model", "light", light_pos)
+	    go.set_position(vmath.vector3(light_pos.x,light_pos.y,light_pos.z), "/light")
+    end
+end
+
+function on_input(self, action_id, action)
+    if action_id == hash("profiler_toggle") and action.pressed then
+		msg.post("@system:", "toggle_profile")
+		return true
+	end
+	return false
+end

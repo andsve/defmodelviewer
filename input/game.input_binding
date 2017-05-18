@@ -1,0 +1,52 @@
+key_trigger {
+  input: KEY_UP
+  action: "up"
+}
+key_trigger {
+  input: KEY_DOWN
+  action: "down"
+}
+key_trigger {
+  input: KEY_BACKSPACE
+  action: "backspace"
+}
+key_trigger {
+  input: KEY_TAB
+  action: "tab"
+}
+key_trigger {
+  input: KEY_LSHIFT
+  action: "shift"
+}
+key_trigger {
+  input: KEY_RSHIFT
+  action: "shift"
+}
+key_trigger {
+  input: KEY_LCTRL
+  action: "ctrl"
+}
+key_trigger {
+  input: KEY_RCTRL
+  action: "ctrl"
+}
+mouse_trigger {
+  input: MOUSE_BUTTON_1
+  action: "touch"
+}
+mouse_trigger {
+  input: MOUSE_WHEEL_UP
+  action: "zoom_out"
+}
+mouse_trigger {
+  input: MOUSE_WHEEL_DOWN
+  action: "zoom_in"
+}
+text_trigger {
+  input: TEXT
+  action: "text"
+}
+text_trigger {
+  input: MARKED_TEXT
+  action: "marked_text"
+}

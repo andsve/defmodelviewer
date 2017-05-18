@@ -1,0 +1,52 @@
+[project]
+title = ModelViewer - Public Edition
+write_log = 0
+dependencies = https://github.com/andsve/dirtylarry/archive/master.zip
+custom_resources = main/
+
+[bootstrap]
+main_collection = /main/main.collectionc
+render = /main/rendering/modelviewer.renderc
+
+[input]
+game_binding = /input/game.input_bindingc
+
+[display]
+width = 640
+height = 960
+samples = 4
+high_dpi = 1
+
+[physics]
+scale = 0.02
+
+[script]
+shared_state = 1
+
+[model]
+max_count = 1024
+
+[rig]
+max_instance_count = 1024
+
+[ios]
+bundle_identifier = se.svenandersson.ModelViewer
+
+[android]
+package = se.svenandersson.ModelViewer
+iap_provider = GooglePlay
+input_method = HiddenInputField
+manifest = 
+
+[osx]
+bundle_identifier = se.svenandersson.ModelViewer
+
+[tracking]
+app_id = 
+
+[label]
+max_count = 512
+
+[collection]
+max_instances = 1024
+

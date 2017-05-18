@@ -1,0 +1,6 @@
+animations {
+  animation: "/main/example_data/simple.dae"
+}
+animations {
+  animation: "/main/example_data/simple_alt_anim.dae"
+}
